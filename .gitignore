@@ -1,6 +1,23 @@
-Projeto_BCI/*.mat
+# Dados grandes
+*.mat
+Projeto_BCI/
+
+# Arquivos temporários
+*.swp
+*.tmp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+
+# Pacotes wheel
+*.whlProjeto_BCI/*.mat
 *.mat 
 *.whl
 .ipynb_checkpoints/
 __pycache__/
+
 

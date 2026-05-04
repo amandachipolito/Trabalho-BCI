@@ -1,397 +1,105 @@
-# Projeto BCI — Pipeline Completo de Processamento de EEG
+# 🧠 EEG-based Brain-Computer Interface (BCI) — SSVEP Classification
 
-## Visão Geral
+## 📌 Overview
+This project implements a Brain-Computer Interface (BCI) system using EEG signals to decode visual attention based on the SSVEP (Steady-State Visually Evoked Potentials) paradigm.
 
-Este projeto implementa um pipeline completo de processamento e análise de sinais EEG utilizando o dataset **Covert Shifts of Attention (005-2015)**. O objetivo principal é analisar sinais associados à atenção encoberta (covert attention) no intervalo temporal entre a apresentação do **cue** e do **target**, utilizando técnicas clássicas de processamento de sinais e análise estatística.
-
-O pipeline foi estruturado para ser reprodutível, auditável e colaborativo, permitindo que diferentes desenvolvedores trabalhem simultaneamente em etapas específicas sem comprometer a consistência do fluxo geral.
-
----
-
-# Objetivo Técnico
-
-O pipeline executa as seguintes operações principais:
-
-- leitura dos arquivos `.mat`
-- filtragem dos sinais EEG
-- segmentação temporal baseada em eventos
-- padronização estatística
-- redução dimensional com PCA
-- decomposição com ICA
-- análise dos componentes independentes
-- extração de características
-- modelagem e avaliação
+The objective is to classify the direction of attention from multichannel EEG data using signal processing and machine learning techniques.
 
 ---
 
-# Organização dos Dados
-
-Os arquivos do dataset devem ser armazenados localmente na pasta:
-
-Projeto_BCI/
-
-Os arquivos `.mat` **não devem ser versionados**, pois possuem grande volume.
-
-O arquivo `.gitignore` deve conter:
-
-*.mat  
-Projeto_BCI/  
-.ipynb_checkpoints/  
-__pycache__/  
-*.pyc  
-*.swp  
-*.tmp  
-*.whl  
+## 📊 Dataset
+- Source: PhysioNet — Covert Shifts of Attention
+- Multichannel EEG recordings
+- Multiple classes representing attention directions
 
 ---
 
-# Pipeline Completo
+## ⚙️ Methodology
 
-## 1 — Preparação do Ambiente
-
-Nesta etapa são instaladas e importadas as bibliotecas necessárias:
-
-- numpy  
-- scipy  
-- matplotlib  
-- sklearn  
-- pathlib  
-- glob  
-- os  
-
-Essas bibliotecas permitem manipulação numérica, leitura de arquivos `.mat`, filtragem digital, visualização gráfica e análise estatística.
+### 1. Preprocessing
+- Band-pass filtering
+- Notch filtering (powerline noise removal)
+- Epoch segmentation
 
 ---
 
-## 2 — Carregamento dos Dados
+### 2. Feature Extraction
 
-Cada arquivo `.mat` contém:
+Two approaches were evaluated:
 
-- sinais EEG contínuos  
-- frequência de amostragem  
-- marcações temporais dos trials  
-- labels dos cues  
-- informações sobre targets  
+#### Baseline
+- Welch spectral estimation
 
-Estrutura principal:
-
-data.X → matriz EEG  
-data.fs → frequência de amostragem  
-data.trial → início dos trials  
-data.y → labels dos cues  
-mrk.target_location → dados dos targets  
-
-Formato típico:
-
-X.shape = (amostras, canais)
-
-Exemplo:
-
-(579736, 62)
-
-Isso indica 62 canais EEG e centenas de milhares de amostras temporais.
+#### Optimized
+- Common Spatial Patterns (CSP)
+- Spatial filtering to enhance class separability
 
 ---
 
-## 3 — Verificação da Frequência de Amostragem
-
-Foi confirmado que:
-
-fs = 200 Hz
-
-Isso significa:
-
-200 amostras por segundo.
-
-Essa informação é essencial para converter índices em tempo real.
+### 3. Classification
+- Model: Support Vector Machine (SVM)
+- Multi-class classification
 
 ---
 
-## 4 — Filtragem dos Sinais EEG
-
-Os sinais passam por dois filtros principais:
-
-### Notch Filter — 60 Hz
-
-Remove ruído da rede elétrica.
-
-### Bandpass Filter — 5–40 Hz
-
-Mantém frequências relevantes do EEG:
-
-- Theta  
-- Alpha  
-- Beta  
-
-Remove:
-
-- drift lento (<5 Hz)  
-- ruído muscular (>40 Hz)
-
-O formato da matriz permanece:
-
-(amostras, canais)
+### 4. Additional Analysis
+- Independent Component Analysis (ICA) for artifact handling
+- Comparison between:
+  - Arbitrary component removal
+  - Data-driven validation approach
 
 ---
 
-## 5 — Inspeção Visual Inicial
+## 🔁 Processing Pipeline
 
-Alguns canais são plotados para verificar:
-
-- estabilidade do sinal  
-- ausência de saturação  
-- comportamento oscilatório esperado  
-
-Essa etapa permite detectar erros estruturais precocemente.
+<p align="center">
+  <img src="PipelineDiagram.png" width="700"/>
+</p>
 
 ---
 
-## 6 — Inspeção dos Trials
+## 📈 Results
 
-Cada trial representa um evento experimental.
+### Confusion Matrix — Optimized Model
 
-Estrutura:
-
-trial → posição temporal do cue  
-labels → classe do cue  
-
-Número típico:
-
-600 trials
+<p align="center">
+  <img src="confusion_matrix_optimized.png" width="500"/>
+</p>
 
 ---
 
-## 7 — Análise do Delay Cue → Target
+### Accuracy per Direction — Optimized Model
 
-Foi calculado o intervalo temporal entre:
-
-cue → target
-
-Resultados obtidos:
-
-Delay médio ≈ 1.62 s  
-Delay mínimo ≈ 0.645 s  
-Delay máximo ≈ 2.17 s  
-
-Esse intervalo representa o período em que o participante mantém atenção encoberta.
+<p align="center">
+  <img src="accuracy_per_direction_optimized.png" width="500"/>
+</p>
 
 ---
 
-## 8 — Criação das Epochs
+## 📊 Baseline vs Optimized Comparison
 
-Os sinais são segmentados no intervalo:
+| Method | Feature Extraction | Classifier | Accuracy |
+|--------|-------------------|------------|----------|
+| Baseline | Welch spectral estimation | SVM | 20.50% |
+| Optimized | CSP spatial filtering | SVM | 41.33% |
 
-cue → target
-
-Cada trial gera uma epoch EEG.
-
-Número total:
-
-600 epochs
-
-Formato inicial:
-
-(amostras_variáveis, canais)
+The optimized pipeline improved performance by **+20.83 percentage points** compared to the Welch-based baseline.
 
 ---
 
-## 9 — Padronização do Tamanho das Epochs
+## 🧠 Key Insights
 
-Como os delays variam, foi adotada a menor janela segura:
-
-129 amostras ≈ 0.645 s
-
-Formato final:
-
-(600, 129, 62)
-
-Isso garante consistência estrutural entre trials.
+- CSP significantly improves class separability compared to spectral-only methods
+- Welch-based approach performs close to chance level (~16.66% for 6 classes)
+- Spatial filtering is critical for extracting meaningful EEG patterns
+- Arbitrary ICA component removal can degrade performance
+- Data-driven preprocessing decisions improve robustness
 
 ---
 
-## 10 — Conversão para Matriz 2D
-
-As epochs são convertidas de:
-
-(600, 129, 62)
-
-para:
-
-(600, 7998)
-
-Cada trial passa a ser representado por um vetor de features.
-
----
-
-## 11 — Padronização Estatística
-
-Aplicação de:
-
-StandardScaler
-
-Objetivo:
-
-média = 0  
-desvio padrão = 1  
-
-Resultado:
-
-X_padronizado.shape = (600, 7998)
-
----
-
-## 12 — PCA Inicial
-
-Aplicação do PCA completo para avaliar a variância explicada.
-
-Resultado:
-
-X_pca.shape = (600, 600)
-
----
-
-## 13 — Análise da Variância Explicada
-
-São gerados:
-
-- Scree Plot  
-- Variância acumulada  
-
-Objetivo:
-
-Determinar o número ideal de componentes.
-
----
-
-## 14 — PCA Reduzido
-
-Critério adotado:
-
-90% da variância acumulada
-
-Resultado:
-
-Número de componentes = 184  
-
-X_pca_reduzido.shape = (600, 184)
-
-Redução:
-
-7998 → 184 dimensões
-
----
-
-## 15 — Verificação Pós-PCA
-
-Foram verificadas:
-
-- dimensionalidade reduzida  
-- variância preservada  
-- média das componentes  
-- variância das componentes  
-- condição necessária para ICA  
-
-Condição validada:
-
-n_features < n_amostras  
-
-184 < 600  
-
-Variância preservada:
-
-≈ 90%
-
----
-
-## 16 — Aplicação de ICA
-
-Foi aplicada:
-
-FastICA
-
-Entrada:
-
-X_pca_reduzido.shape = (600, 184)
-
-Saída esperada:
-
-X_ica.shape = (600, 184)
-
-Objetivo:
-
-Separar componentes estatisticamente independentes.
-
----
-
-## 17 — Análise dos Componentes Independentes
-
-Etapas previstas:
-
-- inspeção visual dos ICs  
-- cálculo de kurtosis  
-- análise de distribuição  
-- identificação de possíveis artefatos  
-- avaliação da independência estatística  
-
----
-
-## 18 — Extração de Características
-
-Possíveis características:
-
-- energia por banda  
-- potência espectral  
-- métricas temporais  
-- métricas estatísticas  
-- características derivadas do ICA  
-
----
-
-## 19 — Modelagem e Avaliação
-
-Possíveis abordagens:
-
-- classificação supervisionada  
-- análise temporal da atenção  
-- comparação entre pipelines  
-
-Métricas possíveis:
-
-- accuracy  
-- matriz de confusão  
-- F1-score  
-
----
-
-# Reprodutibilidade
-
-Para reproduzir o pipeline:
-
-1. Baixar os arquivos `.mat`  
-2. Colocar na pasta:
-
-Projeto_BCI/
-
-3. Executar:
-
-main.ipynb
-
----
-
-
-# Boas Práticas de Versionamento
-
-Fluxo recomendado:
-
-git pull origin main  
-git add main.ipynb  
-git commit -m "Descrição clara da alteração"  
-git push origin main  
-
-Evitar:
-
-git add .
-
-quando houver dados grandes no diretório.
-
-Sempre adicionar arquivos específicos quando possível.
+## 🛠️ Technologies
+- Python
+- NumPy
+- SciPy
+- MNE-Python
+- Scikit-learn

@@ -1,26 +1,12 @@
-# Projeto BCI — Pipeline Completo de Processamento de EEG
+# Projeto BCI — Covert Shifts of Attention
 
-## Visão Geral
-
-Este projeto implementa um pipeline completo de processamento e análise de sinais EEG utilizando o dataset **Covert Shifts of Attention (005-2015)**. O objetivo principal é analisar sinais associados à atenção encoberta (covert attention) no intervalo temporal entre a apresentação do **cue** e do **target**, utilizando técnicas clássicas de processamento de sinais e análise estatística.
+Este repositório contém o pipeline de análise para o dataset **Covert Shifts of Attention (BNCI 005-2015)**, cujo objetivo principal é analisar sinais associados à atenção encoberta (covert attention) no intervalo temporal entre a apresentação do **cue** e do **target**, utilizando técnicas clássicas de processamento de sinais e análise estatística. Neste projeto o foco da análise foi a detecção de modulações da banda alfa no EEG associadas à atenção visual encoberta.
 
 O pipeline foi estruturado para ser reprodutível, auditável e colaborativo, permitindo que diferentes desenvolvedores trabalhem simultaneamente em etapas específicas sem comprometer a consistência do fluxo geral.
 
----
+## Pergunta Operacional do Projeto
 
-# Objetivo Técnico
-
-O pipeline executa as seguintes operações principais:
-
-- leitura dos arquivos `.mat`
-- filtragem dos sinais EEG
-- segmentação temporal baseada em eventos
-- padronização estatística
-- redução dimensional com PCA
-- decomposição com ICA
-- análise dos componentes independentes
-- extração de características
-- modelagem e avaliação
+> É possível estimar a direção da atenção visual encoberta a partir de modulações da banda alfa no EEG?
 
 ---
 
@@ -43,27 +29,71 @@ __pycache__/
 *.tmp  
 *.whl  
 
----
 
-# Pipeline Completo
+## Organização do Notebook main e Abordagens Principais
 
-## 1 — Preparação do Ambiente
+O notebook `main.ipynb` explora duas abordagens distintas para responder à pergunta do projeto:
 
-Nesta etapa são instaladas e importadas as bibliotecas necessárias:
+1.  **Baseline Espectral:** Utiliza a Densidade Espectral de Potência (PSD) via método de Welch, extraindo a potência na banda alfa e classificando com um Support Vector Machine (SVM).
+2.  **Modelo Espacial:** Emprega o Common Spatial Patterns (CSP) para extrair características espaciais que maximizam a separação entre classes, seguido por um SVM para classificação.
 
-- numpy  
-- scipy  
-- matplotlib  
-- sklearn  
-- pathlib  
-- glob  
-- os  
+A comparação entre essas abordagens é crucial, pois a expectativa é que a informação espacial do EEG, capturada pelo CSP, melhore a discriminação das direções de atenção visual.
 
-Essas bibliotecas permitem manipulação numérica, leitura de arquivos `.mat`, filtragem digital, visualização gráfica e análise estatística.
+OBS: em todas as aplicações etapas de inspeção visual dos dados via plotagem de alguns canais são implementadas para desectar erros estruturais precocemente, buscando verificar:
+- estabilidade do sinal  
+- ausência de saturação  
+- comportamento oscilatório esperado
+  
+## Instalação e Configuração
 
----
+Para replicar os resultados, é necessário instalar as seguintes bibliotecas Python. O script de instalação detecta automaticamente se o ambiente é Google Colab ou local.
 
-## 2 — Carregamento dos Dados
+```bash
+# Em ambiente Google Colab, a maioria é pré-instalada. O comando abaixo garante as dependências.
+# Para ambientes locais, certifique-se de instalar as listadas.
+
+pip install -q numpy scipy gdown matplotlib scikit-learn seaborn mne
+```
+
+### Importação das Bibliotecas
+
+```python
+import glob
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from scipy.io import loadmat
+from scipy.signal import butter, filtfilt, iirnotch, sosfiltfilt, welch
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_val_predict, cross_val_score
+from sklearn.metrics import confusion_matrix
+
+import mne
+from mne.preprocessing import ICA
+from mne.decoding import CSP
+```
+
+## Carregamento dos Dados
+
+Os dados são arquivos `.mat` armazenados no Google Drive. O notebook baixa automaticamente a pasta se ela não estiver presente no diretório de trabalho.
+
+```python
+IN_COLAB = "google.colab" in sys.modules
+DATA_DIR = Path("/content/Projeto_BCI" if IN_COLAB else "./Projeto_BCI").resolve()
+GDRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1l2wfRKe3_xGU0otL7aIvcwXn578fGs7a?usp=sharing"
+
+# O código no notebook verifica a existência da pasta e realiza o download se necessário.
+# gdown.download_folder(GDRIVE_FOLDER_URL, output=str(DATA_DIR), quiet=False, use_cookies=False)
+```
+
+O dataset é composto por 8 arquivos `.mat`, cada um correspondendo a um participante, com sinais EEG amostrados a 200 Hz e 62 canais.
 
 Cada arquivo `.mat` contém:
 
@@ -93,277 +123,66 @@ Isso indica 62 canais EEG e centenas de milhares de amostras temporais.
 
 ---
 
-## 3 — Verificação da Frequência de Amostragem
+## Pré-processamento do EEG
 
-Foi confirmado que:
+O pipeline de pré-processamento inclui:
 
-fs = 200 Hz
+*   **Filtro Notch:** Remoção de ruído de linha de 60 Hz.
+*   **Filtro Passa-banda:** Filtragem entre 8 e 14 Hz (banda alfa).
+*   **Normalização (Z-score):** Aplicada canal a canal para padronizar as amplitudes.
 
-Isso significa:
+## Eventos, Labels e Criação de Épocas
 
-200 amostras por segundo.
+Cada trial representa um evento experimental (número típico: 600 trials), cuja estrutura contém:
+- trial → posição temporal do cue  
+- labels → classe do cue  
 
-Essa informação é essencial para converter índices em tempo real.
+O delay é o intervalo temporal entre o 'cue' (indicação da direção da atenção) e o 'target'(estímulo visual), que representa o período em que o participante mantém atenção encoberta, sendo:
+- Delay médio ≈ 1.62 s
+- Delay mínimo ≈ 0.645 s
+- Delay máximo ≈ 2.17 s
 
----
+As épocas são padronizadas pelo menor `delay` encontrado entre `cue` e `target` para garantir uniformidade dos vetores para processamento posterior.
 
-## 4 — Filtragem dos Sinais EEG
+## Limpeza por ICA
 
-Os sinais passam por dois filtros principais:
+Independent Component Analysis (ICA) é utilizada para remover artefatos. Componentes são identificados visualmente (e removidos, por exemplo, os componentes 0 e 1, que geralmente correspondem a piscadas oculares e movimentos) e as épocas são reconstruídas sem eles. Para tal, foi adotado o método "fastICA", que permite separar componentes estatisticamente independentes.
 
-### Notch Filter — 60 Hz
 
-Remove ruído da rede elétrica.
+## Modelo Baseline: Welch + SVM
 
-### Bandpass Filter — 5–40 Hz
+### Extração de Features
 
-Mantém frequências relevantes do EEG:
+Para cada época, a Densidade Espectral de Potência (PSD) é calculada nos canais posteriores usando o método de Welch. A potência média na banda alfa (8-14 Hz) é extraída como feature para o classificador. As features são então transformadas em `log10` e padronizadas via z-score.
 
-- Theta  
-- Alpha  
-- Beta  
+### Classificação e Avaliação
 
-Remove:
+Um SVM é treinado e avaliado usando validação cruzada estratificada (5 folds). São realizadas otimizações separadas para classificação binária (e.g., Direção 0 vs Direção 1) e multiclasse (todas as 6 direções).
 
-- drift lento (<5 Hz)  
-- ruído muscular (>40 Hz)
+**Resultados:** O modelo Baseline (Welch + SVM) apresenta desempenho próximo ao nível de chance para a classificação multiclasse (~16.66% de acurácia, com algumas direções atingindo ~25% e outras abaixo de 20%), indicando que a potência alfa isolada por canal não é altamente discriminativa.
 
-O formato da matriz permanece:
+## Modelo Espacial: CSP + SVM
 
-(amostras, canais)
+### Extração de Features
 
----
+O Common Spatial Patterns (CSP) é aplicado às épocas limpas pela ICA para extrair componentes espaciais que maximizam a variância entre as classes (direções de atenção). São extraídos 10 componentes, e suas variâncias log-normalizadas servem como features para o SVM.
 
-## 5 — Inspeção Visual Inicial
+### Classificação e Avaliação
 
-Alguns canais são plotados para verificar:
+Similarmente ao modelo baseline, um SVM é treinado com as features do CSP e avaliado com validação cruzada. Otimização de hiperparâmetros é realizada para encontrar a melhor configuração do SVM.
 
-- estabilidade do sinal  
-- ausência de saturação  
-- comportamento oscilatório esperado  
+**Resultados:** O modelo CSP + SVM demonstra uma melhora substancial em relação ao baseline, atingindo acurácias multiclasse em torno de 30-35%, com picos acima de 40% para algumas direções (e.g., Direção 0). Este resultado sugere que a informação espacial das modulações alfa é crucial para a discriminação das direções de atenção.
 
-Essa etapa permite detectar erros estruturais precocemente.
+## Interpretação Técnica dos Resultados
 
----
+*   **Resultado Principal:** O pipeline **CSP + SVM** supera significativamente o **Welch + SVM**, sugerindo que a informação discriminativa não reside apenas na potência alfa isolada de cada canal, mas na distribuição espacial e nos padrões de conectividade entre os eletrodos posteriores.
+*   **Implicação:** A atenção visual encoberta produz padrões espaciais sutis no EEG que o CSP é capaz de realçar, atuando como um filtro espacial supervisionado que torna evidentes as diferenças entre as classes de atenção.
 
-## 6 — Inspeção dos Trials
+## Ponto Metodológico Importante
 
-Cada trial representa um evento experimental.
+É fundamental notar que este dataset não é um SSVEP clássico com estímulos piscando em frequências fixas. Portanto, o trabalho deve ser descrito como uma análise de **modulações oscilatórias em banda alfa associadas à atenção visual encoberta**, utilizando uma lógica de processamento inspirada em BCIs visuais baseadas em frequência, mas sem a premissa de um SSVEP tradicional.
 
-Estrutura:
-
-trial → posição temporal do cue  
-labels → classe do cue  
-
-Número típico:
-
-600 trials
-
----
-
-## 7 — Análise do Delay Cue → Target
-
-Foi calculado o intervalo temporal entre:
-
-cue → target
-
-Resultados obtidos:
-
-Delay médio ≈ 1.62 s  
-Delay mínimo ≈ 0.645 s  
-Delay máximo ≈ 2.17 s  
-
-Esse intervalo representa o período em que o participante mantém atenção encoberta.
-
----
-
-## 8 — Criação das Epochs
-
-Os sinais são segmentados no intervalo:
-
-cue → target
-
-Cada trial gera uma epoch EEG.
-
-Número total:
-
-600 epochs
-
-Formato inicial:
-
-(amostras_variáveis, canais)
-
----
-
-## 9 — Padronização do Tamanho das Epochs
-
-Como os delays variam, foi adotada a menor janela segura:
-
-129 amostras ≈ 0.645 s
-
-Formato final:
-
-(600, 129, 62)
-
-Isso garante consistência estrutural entre trials.
-
----
-
-## 10 — Conversão para Matriz 2D
-
-As epochs são convertidas de:
-
-(600, 129, 62)
-
-para:
-
-(600, 7998)
-
-Cada trial passa a ser representado por um vetor de features.
-
----
-
-## 11 — Padronização Estatística
-
-Aplicação de:
-
-StandardScaler
-
-Objetivo:
-
-média = 0  
-desvio padrão = 1  
-
-Resultado:
-
-X_padronizado.shape = (600, 7998)
-
----
-
-## 12 — PCA Inicial
-
-Aplicação do PCA completo para avaliar a variância explicada.
-
-Resultado:
-
-X_pca.shape = (600, 600)
-
----
-
-## 13 — Análise da Variância Explicada
-
-São gerados:
-
-- Scree Plot  
-- Variância acumulada  
-
-Objetivo:
-
-Determinar o número ideal de componentes.
-
----
-
-## 14 — PCA Reduzido
-
-Critério adotado:
-
-90% da variância acumulada
-
-Resultado:
-
-Número de componentes = 184  
-
-X_pca_reduzido.shape = (600, 184)
-
-Redução:
-
-7998 → 184 dimensões
-
----
-
-## 15 — Verificação Pós-PCA
-
-Foram verificadas:
-
-- dimensionalidade reduzida  
-- variância preservada  
-- média das componentes  
-- variância das componentes  
-- condição necessária para ICA  
-
-Condição validada:
-
-n_features < n_amostras  
-
-184 < 600  
-
-Variância preservada:
-
-≈ 90%
-
----
-
-## 16 — Aplicação de ICA
-
-Foi aplicada:
-
-FastICA
-
-Entrada:
-
-X_pca_reduzido.shape = (600, 184)
-
-Saída esperada:
-
-X_ica.shape = (600, 184)
-
-Objetivo:
-
-Separar componentes estatisticamente independentes.
-
----
-
-## 17 — Análise dos Componentes Independentes
-
-Etapas previstas:
-
-- inspeção visual dos ICs  
-- cálculo de kurtosis  
-- análise de distribuição  
-- identificação de possíveis artefatos  
-- avaliação da independência estatística  
-
----
-
-## 18 — Extração de Características
-
-Possíveis características:
-
-- energia por banda  
-- potência espectral  
-- métricas temporais  
-- métricas estatísticas  
-- características derivadas do ICA  
-
----
-
-## 19 — Modelagem e Avaliação
-
-Possíveis abordagens:
-
-- classificação supervisionada  
-- análise temporal da atenção  
-- comparação entre pipelines  
-
-Métricas possíveis:
-
-- accuracy  
-- matriz de confusão  
-- F1-score  
-
----
-
-# Reprodutibilidade
+## Reprodutibilidade
 
 Para reproduzir o pipeline:
 
@@ -376,10 +195,12 @@ Projeto_BCI/
 
 main.ipynb
 
----
 
+## Licença
 
-# Boas Práticas de Versionamento
+Esse projeto foi desenvolvido no âmbito da disciplina Interface Cérebro Máquina da graduação em Neurociência da UFABC e é de licença aberta. 
+
+## Boas Práticas de Versionamento
 
 Fluxo recomendado:
 
@@ -395,3 +216,4 @@ git add .
 quando houver dados grandes no diretório.
 
 Sempre adicionar arquivos específicos quando possível.
+```

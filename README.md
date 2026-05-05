@@ -9,6 +9,12 @@ O pipeline foi estruturado para ser reprodutível, auditável e colaborativo, pe
 > É possível estimar a direção da atenção visual encoberta a partir de modulações da banda alfa no EEG?
 
 ---
+# Documentação oficial da nossa metodologia 
+
+<p><a href="https://docs.google.com/document/d/1-5VuDFZvUFUh0vSyLz65WOg4XkVh47Qgcm-eVw2dAiE/edit?usp=sharing" style="display: none;">Documentação</a></p>
+
+
+---
 
 # Organização dos Dados
 
